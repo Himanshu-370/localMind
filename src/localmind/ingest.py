@@ -87,6 +87,9 @@ def scan(roots: list[str], exclude: Sequence[Path] = (), max_mb: int = 5,
     excl = [Path(e).resolve() for e in exclude]
     seen: set[str] = set()
     for root in canonical_roots(roots):
+        if any(root == e or e in root.parents for e in excl):
+            res.skipped.append((str(root), "LocalMind data directory"))
+            continue
         if not root.is_dir():
             res.failed.append((str(root), "root missing or not a directory"))
             continue

@@ -66,6 +66,12 @@ locations.
 Removing a directory disables chat until you rebuild. A failed rebuild keeps the previous
 index and vault. Skipped/failed files are listed in the chat panel.
 
+Refresh preserves personal notes and Obsidian settings. If a generated note would
+overwrite a personal or edited note, move or rename that note and retry. Vaults built
+with v0.1.0 lack a note inventory, so refresh preserves their existing notes unless a
+new note has identical content. To start with a fresh graph, move the old vault to a
+different folder before refreshing.
+
 ## Development
 
 From a source checkout:

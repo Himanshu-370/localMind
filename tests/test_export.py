@@ -46,7 +46,7 @@ def test_refuses_foreign_dir_and_clears_only_owned(tmp_path):
     export_vault(NODES, EDGES, g)
     (g / "stale.md").write_text("x")
     export_vault(NODES[:1], [], g)
-    assert not (g / "stale.md").exists() and (g / MARKER).exists()
+    assert (g / "stale.md").read_text() == "x" and (g / MARKER).exists()
 
 
 def test_replace_dir_keeps_old_on_failure(tmp_path):
@@ -61,3 +61,63 @@ def test_replace_dir_keeps_old_on_failure(tmp_path):
     with pytest.raises(Exception):
         replace_dir(tmp_path / "missing", final)
     assert (final / "new.md").exists()
+
+
+def test_regeneration_preserves_user_notes_and_settings(tmp_path):
+    vault = tmp_path / "vault"
+    export_vault(NODES, EDGES, vault, DOCS)
+    (vault / "Personal.md").write_text("keep")
+    (vault / ".obsidian").mkdir()
+    (vault / ".obsidian" / "appearance.json").write_text("{}")
+    export_vault(NODES[:1], [], vault, DOCS)
+    assert (vault / "Personal.md").read_text() == "keep"
+    assert (vault / ".obsidian" / "appearance.json").read_text() == "{}"
+    assert not (vault / "Kafka.md").exists()
+
+
+def test_publish_rolls_back_both_artifacts_on_vault_failure(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from localmind.export_graph import replace_build
+
+    storage, vault = tmp_path / "storage", tmp_path / "vault"
+    stage, stage_vault = tmp_path / "storage.staging", tmp_path / "vault.staging"
+    for folder in (storage, vault, stage, stage_vault):
+        folder.mkdir()
+        (folder / "content").write_text(folder.name)
+    rename = Path.rename
+
+    def fail_vault_publish(source, target):
+        if source == stage_vault and target == vault:
+            raise OSError("vault publish failed")
+        return rename(source, target)
+
+    monkeypatch.setattr(Path, "rename", fail_vault_publish)
+    with pytest.raises(OSError, match="vault publish failed"):
+        replace_build(stage, storage, stage_vault, vault)
+    assert (storage / "content").read_text() == "storage"
+    assert (vault / "content").read_text() == "vault"
+
+
+def test_conflicting_legacy_note_survives_refresh(tmp_path):
+    from localmind.export_graph import LEGACY_MARKER
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / MARKER).write_text(LEGACY_MARKER)
+    (vault / "Kafka.md").write_text("personal or edited note")
+    with pytest.raises(ValueError, match="Move or rename"):
+        export_vault(NODES, EDGES, vault, DOCS)
+    assert (vault / "Kafka.md").read_text() == "personal or edited note"
+    assert (vault / MARKER).read_text() == LEGACY_MARKER
+    assert not (vault / "Project Atlas.md").exists()
+
+
+def test_edited_generated_note_survives_refresh(tmp_path):
+    vault = tmp_path / "vault"
+    export_vault(NODES, EDGES, vault, DOCS)
+    (vault / "Kafka.md").write_text("my edits")
+    with pytest.raises(ValueError, match="Move or rename"):
+        export_vault(NODES, EDGES, vault, DOCS)
+    export_vault(NODES[:1], [], vault, DOCS)
+    assert (vault / "Kafka.md").read_text() == "my edits"

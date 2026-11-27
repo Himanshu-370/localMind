@@ -19,3 +19,15 @@ def test_remote_host_rejected_and_unreachable_message(monkeypatch):
         raise OSError("offline")
     monkeypatch.setattr("localmind.rag.urllib.request.urlopen", unavailable)
     assert "ollama serve" in check_ollama(Config(ollama_host="http://127.0.0.1:1"))[0]
+
+
+def test_removed_sources_block_engine_queries():
+    import asyncio
+    from types import SimpleNamespace
+
+    import pytest
+    from localmind.rag import Engine
+
+    engine = SimpleNamespace(cfg=Config(blocked=True), manifest=lambda: {})
+    with pytest.raises(RuntimeError, match="source was removed"):
+        asyncio.run(Engine._ask(engine, "What was indexed?", "GraphRAG"))
