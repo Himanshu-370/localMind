@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "localmind-graphrag"
+version = "0.1.0"
+description = "Local GraphRAG for user-selected documents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "lightrag-hku==1.5.8",
+  "ollama==0.6.3",
+  "platformdirs>=4,<5",
+  "pypdf==7.2.0",
+]
+
+[project.scripts]
+localmind = "localmind.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.14,<2",
+  "pytest==9.2.0",
+  "twine>=6,<7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/localmind"]
+ignore_missing_imports = true
+check_untyped_defs = true
