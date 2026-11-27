@@ -173,7 +173,7 @@ class App(tk.Tk):
     # ----- chat -----
     def ask(self):
         qn = self.entry.get().strip()
-        if not qn or self.busy:
+        if not qn or self.busy or self.cfg.blocked or not self.engine.has_index():
             return
         self.entry.delete(0, "end")
         self._say(f"Q [{self.mode.get()}]: {qn}", "q")

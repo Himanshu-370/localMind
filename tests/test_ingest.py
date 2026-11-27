@@ -57,3 +57,12 @@ def test_stable_ids_and_size_limit(tmp_path):
     (tmp_path / "a/big.md").write_text("x" * (2 * 1024 * 1024))
     r = scan([str(tmp_path / "a")], max_mb=1)
     assert any("limit" in why for _, why in r.skipped)
+
+
+def test_explicitly_selected_excluded_roots_are_not_scanned(tmp_path):
+    vault = tmp_path / "vault"
+    sub = vault / "nested"
+    sub.mkdir(parents=True)
+    (sub / "note.md").write_text("Generated note")
+    for root in (vault, sub):
+        assert scan([str(root)], exclude=[vault]).docs == []

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import shutil
 import threading
@@ -12,7 +13,7 @@ from functools import partial
 from pathlib import Path
 
 from .config import Config, is_loopback
-from .export_graph import broken_links, export_vault, replace_dir
+from .export_graph import export_vault, replace_build
 from .ingest import ScanResult, scan
 from .paths import AppPaths, default_paths
 
@@ -127,7 +128,12 @@ class Engine:
 
     # -- build: staging -> publish only on success --
     def rebuild(self, progress=lambda stage, **kw: None) -> dict:
-        return self.run(self._rebuild(progress))
+        with (self.paths.data_dir / ".refresh.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise RuntimeError("A knowledge base refresh is already running.") from exc
+            return self.run(self._rebuild(progress))
 
     async def _rebuild(self, progress) -> dict:
         cfg = self.cfg
@@ -163,18 +169,18 @@ class Engine:
         finally:
             await rag.finalize_storages()
         docs = {d.doc_id: d.path for d in res.docs if d.path not in {p for p, _ in failed}}
+        if vault.is_symlink() or (vault.exists() and not vault.is_dir()):
+            raise ValueError(f"Refusing to replace {vault}. Expected a LocalMind vault folder.")
+        if vault.exists():
+            await asyncio.to_thread(shutil.copytree, vault, stage_vault, symlinks=True)
         stats = await asyncio.to_thread(export_vault, nodes, edges, stage_vault, docs)
-        bad = broken_links(stage_vault)
-        if bad:
-            raise RuntimeError(f"Vault has {len(bad)} broken links, e.g. {bad[0]}")
         manifest = {"built_at": time.strftime("%Y-%m-%d %H:%M:%S"), "roots": cfg.roots,
                     "docs": docs,
                     "discovered": res.discovered, "skipped": len(res.skipped), "failed": len(failed),
                     "llm_model": cfg.llm_model, "embed_model": cfg.embed_model, **stats}
         (stage / "manifest.json").write_text(json.dumps(manifest, indent=2))
         await self.close()
-        replace_dir(stage, storage)  # old artifacts survive any failure above
-        replace_dir(stage_vault, vault)
+        replace_build(stage, storage, stage_vault, vault)
         progress("done", processed=done, total=len(res.docs), failed=len(failed))
         return {"manifest": manifest, "skipped": res.skipped, "failed": failed}
 
@@ -188,6 +194,9 @@ class Engine:
         return self.run(self._ask(question, mode_label))
 
     async def _ask(self, question: str, mode_label: str) -> Answer:
+        if self.cfg.blocked:
+            raise RuntimeError("A source was removed. Rebuild to query again.")
+
         from lightrag import QueryParam
 
         man = self.manifest()
